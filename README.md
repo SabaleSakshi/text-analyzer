@@ -324,14 +324,7 @@ Additional test case:
 
 - Copy `backend/.env.example` to `backend/.env`, run `.\start-services.ps1`, and verify the script reports the backend on `http://127.0.0.1:8001`.
 
-## Testing Checklist
 
-- `POST /api/moderate` returns a stored moderation item with status `PROCESSING`.
-- `GET /api/moderate/{id}` eventually returns `APPROVED`, `PENDING_REVIEW`, or `ERROR`.
-- Toxic content appears in `GET /api/queue`.
-- `POST /api/queue/{id}/decide` updates status to `APPROVED` or `REJECTED`.
-- `GET /api/stats` returns total, toxic, safe, pending, approved, rejected, processing, and error counts.
-- The frontend can submit text, poll for results, display explanations, show queue items, and submit decisions.
 
 
 
