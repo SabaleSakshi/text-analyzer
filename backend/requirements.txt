@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+websockets
+fastapi
+uvicorn
+motor
+pymongo
+httpx
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart
+websockets
