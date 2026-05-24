@@ -333,36 +333,6 @@ Additional test case:
 - `GET /api/stats` returns total, toxic, safe, pending, approved, rejected, processing, and error counts.
 - The frontend can submit text, poll for results, display explanations, show queue items, and submit decisions.
 
-## Deployment
 
-The project can be deployed with separate services:
 
-- Frontend: Vercel, Netlify, or static hosting
-- Backend API: Railway, Fly.io, Render, AWS, or any Docker host
-- AI Service: GPU/CPU-capable Docker host
-- MongoDB: MongoDB Atlas or managed MongoDB
 
-Public demo URL:
-
-```text
-Add deployed frontend URL here.
-```
-
-## Demo Video Checklist
-
-The 5-8 minute video should show:
-
-- Frontend text moderation flow
-- Toxic item entering the human review queue
-- Approve/reject decision
-- Statistics page update
-- Backend API endpoints
-- AI service decision and explainability logic
-- Architecture diagram
-- Bug fixes and why the original code was wrong
-
-Video URL:
-
-```text
-Add YouTube unlisted or Loom URL here.
-```
