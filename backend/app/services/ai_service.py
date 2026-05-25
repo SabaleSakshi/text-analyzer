@@ -66,10 +66,22 @@ class AIService:
                 httpx.ConnectError,
                 httpx.ConnectTimeout,
                 httpx.ReadError,
-                httpx.RemoteProtocolError
+                httpx.RemoteProtocolError,
+                httpx.HTTPStatusError
             ) as exc:
 
                 last_error = exc
+
+                if (
+                    isinstance(exc, httpx.HTTPStatusError)
+                    and exc.response.status_code < 500
+                ):
+                    logger.error(
+                        "AI service returned non-retryable status %s: %s",
+                        exc.response.status_code,
+                        exc.response.text
+                    )
+                    raise
 
                 logger.warning(
                     "AI service request failed on attempt %s/5: %s",
