@@ -43,11 +43,34 @@ function Start-If-Port-Free {
     Write-Host "Started $Name on port $Port"
 }
 
+function Wait-For-Http {
+    param (
+        [string]$Name,
+        [string]$Url,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 5 | Out-Null
+            Write-Host "$Name is ready"
+            return
+        }
+        catch {
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    throw "$Name did not become ready at $Url within $TimeoutSeconds seconds"
+}
+
 Start-If-Port-Free `
     -Port 5173 `
     -Name "frontend" `
-    -FilePath "npm" `
-    -Arguments @("run", "dev") `
+    -FilePath "cmd.exe" `
+    -Arguments @("/c", "npm.cmd", "run", "dev", "--", "--host", "127.0.0.1") `
     -WorkingDirectory (Join-Path $Root "frontend") `
     -OutLog (Join-Path $LogDir "frontend.out.log") `
     -ErrLog (Join-Path $LogDir "frontend.err.log")
@@ -60,6 +83,11 @@ Start-If-Port-Free `
     -WorkingDirectory (Join-Path $Root "ai-service") `
     -OutLog (Join-Path $LogDir "ai-service.out.log") `
     -ErrLog (Join-Path $LogDir "ai-service.err.log")
+
+Wait-For-Http `
+    -Name "ai-service" `
+    -Url "http://127.0.0.1:8000/health" `
+    -TimeoutSeconds 240
 
 Start-If-Port-Free `
     -Port $BackendPort `

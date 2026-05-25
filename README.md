@@ -183,22 +183,65 @@ Use these examples in the frontend to show the full flow:
 ## Architecture Diagram
 
 ```mermaid
-flowchart LR
-    User["Evaluator / Moderator"] --> Frontend["React + Vite Frontend<br/>localhost:5173"]
-    Frontend --> Backend["FastAPI Backend<br/>localhost:8001"]
-    Backend --> Mongo[("MongoDB<br/>moderation records")]
-    Backend --> AI["FastAPI AI Service<br/>localhost:8000"]
-    AI --> Model["RoBERTa Toxic Classifier"]
-    AI --> Explain["Captum Integrated Gradients<br/>top words + reason"]
-    Model --> AI
-    Explain --> AI
-    AI --> Backend
-    Backend --> Mongo
-    Backend --> Frontend
+flowchart TB
 
-    Backend -. "toxic result" .-> Queue["Human Review Queue"]
-    Queue --> Frontend
-    Frontend -. "approve / reject" .-> Backend
+    %% ===== USER FLOW =====
+
+    User["👤 User / Moderator"]
+
+    Frontend["🎨 React + Vite Frontend"]
+
+    Backend["⚙️ FastAPI Backend"]
+
+    Mongo[("🗄️ MongoDB")]
+
+    AI["🧠 FastAPI AI Service"]
+
+    Model["🤖 RoBERTa Toxic Classifier"]
+
+    Explain["📊 Captum Explainability"]
+
+    Queue["🛡️ Human Review Queue"]
+
+    %% ===== FLOW =====
+
+    User -->|Submit Text| Frontend
+
+    Frontend -->|API Request| Backend
+
+    Backend -->|Store Data| Mongo
+
+    Backend -->|Moderation Request| AI
+
+    AI -->|Toxicity Detection| Model
+
+    AI -->|Generate Explanation| Explain
+
+    AI -->|Moderation Result| Backend
+
+    Backend -->|Send Response| Frontend
+
+    Backend -. "Flagged Content" .-> Queue
+
+    Queue -->|Display Review Items| Frontend
+
+    Frontend -. "Approve / Reject" .-> Backend
+
+    %% ===== COLORS =====
+
+    classDef frontend fill:#E8F5E9,stroke:#43A047,color:#000;
+    classDef backend fill:#FFF3E0,stroke:#FB8C00,color:#000;
+    classDef ai fill:#F3E5F5,stroke:#8E24AA,color:#000;
+    classDef db fill:#ECEFF1,stroke:#546E7A,color:#000;
+    classDef queue fill:#FFEBEE,stroke:#E53935,color:#000;
+    classDef user fill:#E3F2FD,stroke:#1E88E5,color:#000;
+
+    class User user;
+    class Frontend frontend;
+    class Backend backend;
+    class AI ai;
+    class Mongo db;
+    class Queue queue;
 ```
 
 ## Data Flow
@@ -252,6 +295,27 @@ For toxic content, the AI service uses Captum Integrated Gradients to identify i
 - `severity`: `SAFE`, `LOW`, `MEDIUM`, or `HIGH`
 
 Safe content skips the slower Captum step and returns `Safe content detected.`
+
+## How It Works
+
+1. The AI service tokenizes the submitted text with the RoBERTa tokenizer.
+2. The classifier returns sigmoid probabilities for the toxicity labels.
+3. If the text is safe, the service skips attribution and returns `Safe content detected.`
+4. If the text is toxic, Captum `LayerIntegratedGradients` computes token-level attributions against the RoBERTa embedding layer.
+5. RoBERTa subword tokens are merged back into readable words.
+6. Stopwords and very short tokens are filtered out.
+7. The highest-attribution words become `top_words`.
+8. Short phrase pairs are built from important words and returned as `toxic_phrases`.
+9. A human-readable `reason` is generated from triggered labels such as `threat`, `insult`, `obscene`, and `identity_attack`.
+
+## Why This Helps
+
+The explanation lets a human reviewer see which words or phrases most influenced the toxic decision. This is useful for:
+
+- Debugging false positives
+- Reviewing ambiguous moderation decisions
+- Explaining why content entered the human review queue
+- Checking whether the model focused on actually harmful words instead of harmless sentence structure
 
 ## Bug Fix Documentation
 
@@ -307,24 +371,57 @@ Additional test case:
 
 - Start with `docker-compose up --build`, open `http://127.0.0.1:5173`, submit text, and verify the frontend reaches the backend without manual URL changes.
 
-### Bug 3: Environment example used the old backend port
+
+### Bug 3: V1 model falsely flagged safe compliments as toxic
 
 Why it was wrong:
 
-The backend `.env.example` used `PORT=5000`, while the Docker and helper script are standardized around `8001`. This made manual setup inconsistent with container setup.
+The first model version fine-tuned `roberta-base` on 5,000 Jigsaw Toxic Comment samples with a balanced split of 2,500 toxic and 2,500 clean examples. It achieved a strong validation AUC of `0.956`, but testing revealed a serious real-world failure: safe compliment sentences such as `you are a pure gentleman` and `you are a nice guy` were being classified as toxic.
 
-Corrected environment:
+The root cause was dataset and pattern overfitting. In the V1 training data, the phrase shape `you are a ___` appeared mostly in toxic examples, so the model learned that sentence structure as a shortcut instead of learning the actual meaning of the compliment word. This made the model look good on aggregate metrics while failing important edge cases.
 
-```env
-# Keep local manual runs aligned with Docker Compose.
-PORT=8001
+Corrected approach:
+
+```python
+# V2 training changes
+training_samples = 15000              # 5k toxic + 10k clean
+synthetic_compliments = 80            # "you are a [compliment]" safe examples
+frozen_roberta_layers = 6             # reduce catastrophic forgetting
+label_smoothing = True                # reduce overconfident predictions
+threshold = best_f1_threshold         # selected using validation sweep
+
+# Final score uses the fine-tuned model with Detoxify as a stability anchor.
+final_toxicity_score = (
+    0.40 * finetuned_roberta_score
+    + 0.60 * detoxify_score
+)
 ```
 
-Additional test case:
+What changed in V2:
 
-- Copy `backend/.env.example` to `backend/.env`, run `.\start-services.ps1`, and verify the script reports the backend on `http://127.0.0.1:8001`.
+- Increased training data from 5,000 to 15,000 samples.
+- Used a more realistic `1:2` toxic-to-clean ratio with 5k toxic and 10k clean examples.
+- Added 80 synthetic compliment examples so the model learns that `you are a [compliment]` can be safe.
+- Froze the bottom 6 RoBERTa layers to reduce catastrophic forgetting.
+- Added label smoothing to avoid overconfident decisions.
+- Replaced the fixed `0.5` cutoff with a validation-swept threshold optimized for F1.
+- Used an ensemble: 40% fine-tuned RoBERTa and 60% pretrained Detoxify.
 
+```
 
+Infrastructure note:
+
+- Training ran on Google Colab with a T4 GPU, taking about 25 minutes per run.
+- Data was loaded through Kaggle API secrets, so no manual dataset upload was required.
+- The model checkpoint was downloaded to the laptop at about 500 MB.
+- The V2 model is ready to connect to FastAPI through the `ContentModeratorV2` class.
+
+Additional test cases:
+
+- Verify `you are a pure gentleman` is classified as safe.
+- Verify `you are a nice guy` is classified as safe.
+- Verify direct insults such as `you are an idiot` remain toxic.
+- Verify the explanation highlights actually harmful words instead of harmless sentence structure.
 
 
 

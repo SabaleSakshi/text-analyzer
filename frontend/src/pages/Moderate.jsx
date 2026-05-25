@@ -51,7 +51,11 @@ export default function Moderate({ apiBase }) {
       setResult(item);
 
       if (item.status !== "PROCESSING") {
-        setStatus("Analysis complete.");
+        setStatus(
+          item.status === "ERROR"
+            ? "Analysis failed. Check that the AI service is running."
+            : "Analysis complete."
+        );
         return item;
       }
 

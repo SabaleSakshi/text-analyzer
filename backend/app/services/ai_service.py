@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 import httpx
@@ -26,44 +27,76 @@ class AIService:
             300.0
         )
 
-        try:
+        last_error = None
 
-            async with httpx.AsyncClient(
-                timeout=timeout
-            ) as client:
+        for attempt in range(1, 6):
 
-                response = await client.post(
+            try:
 
-                    f"{settings.AI_SERVICE_URL}/moderate",
+                async with httpx.AsyncClient(
+                    timeout=timeout
+                ) as client:
 
-                    json={
-                        "text": text
-                    }
+                    response = await client.post(
 
+                        f"{settings.AI_SERVICE_URL}/moderate",
+
+                        json={
+                            "text": text
+                        }
+
+                    )
+
+                    logger.info(
+                        f"AI response status: {response.status_code}"
+                    )
+
+                    response.raise_for_status()
+
+                    elapsed = time.time() - start
+
+                    logger.info(
+                        f"AI request completed in "
+                        f"{elapsed:.2f} seconds"
+                    )
+
+                    return response.json()
+
+            except (
+                httpx.ConnectError,
+                httpx.ConnectTimeout,
+                httpx.ReadError,
+                httpx.RemoteProtocolError
+            ) as exc:
+
+                last_error = exc
+
+                logger.warning(
+                    "AI service request failed on attempt %s/5: %s",
+                    attempt,
+                    str(exc)
                 )
 
-                logger.info(
-                    f"AI response status: {response.status_code}"
+                if attempt < 5:
+                    await asyncio.sleep(2 * attempt)
+
+            except Exception as exc:
+
+                logger.error(
+                    f"AI service failed: {str(exc)}"
                 )
 
-                response.raise_for_status()
+                raise
 
-                elapsed = time.time() - start
+        logger.error(
+            "AI service unavailable after retries: %s",
+            str(last_error)
+        )
 
-                logger.info(
-                    f"AI request completed in "
-                    f"{elapsed:.2f} seconds"
-                )
-
-                return response.json()
-
-        except Exception as e:
-
-            logger.error(
-                f"AI service failed: {str(e)}"
-            )
-
-            raise
+        raise RuntimeError(
+            "AI service is unavailable. Start the AI service on "
+            f"{settings.AI_SERVICE_URL} and retry."
+        )
 
 
 ai_service = AIService()
