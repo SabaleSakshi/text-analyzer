@@ -1,15 +1,18 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
 
-    MODEL_PATH: str = (
-        "app/models/best_model_v2.ckpt"
-    )
+    HF_REPO_ID: str
+    MODEL_FILENAME: str
 
     MODEL_NAME: str = "roberta-base"
-
     MAX_LEN: int = 128
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
 
 
 settings = Settings()

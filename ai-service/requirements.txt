@@ -12,3 +12,4 @@ pytorch-lightning
 sentencepiece
 accelerate
 pydantic-settings
+huggingface_hub
